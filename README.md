@@ -1,135 +1,114 @@
-# arpon-inertia-bridge
+# arpon-express-inertia-bridge
 
-`arpon-inertia-bridge` is an Express middleware for **Inertia.js + Vite** apps.
+**The Express + Inertia.js bridge middleware for building modern full-stack web applications with React or Vue**
 
-It gives you:
-- `res.inertia(component, props?)`
-- `res.inertiaLocation(url)`
-- first-load HTML rendering with Vite tags
-- optional SSR integration
-- server-side `<Head />` / title support
+Connect your Express.js backend to Inertia.js frontend. Build single-page applications (SPAs) with server-side rendering support, supporting both React and Vue 3 with Vite bundling.
 
-It supports React by default and includes a Vue dev adapter mode.
+### What is Inertia.js?
 
----
+Inertia.js is a framework for building modern single-page applications (SPAs) using classic server-side routing and controllers. This Express middleware bridges the gap between your server and client, eliminating the need for a separate API.
 
-## Install
+**Perfect for:**
+- Full-stack web applications with Node.js + Express
+- Server-side rendered (SSR) React or Vue applications
+- Building SPAs without managing a separate REST/GraphQL API
+- Developers who want server routing with client-side interactivity
+
+## What you need
+
+**Node.js:** 18 or higher  
+**Express:** 4.18+ (works with Express 5 too)  
+**Frontend:** React (with `@inertiajs/react`) or Vue (with `@inertiajs/vue3`)  
+**Build tool:** Vite (for modern, fast bundling)
+
+## Installation
+
+Choose your Express + Inertia stack and run one command:
+
+### React + Express + Vite Setup
+
+For building Express Inertia applications with React and Vite:
 
 ```bash
-npm install arpon-inertia-bridge
+npm i arpon-express-inertia-bridge express ejs @inertiajs/react react react-dom
+npm i -D vite @vitejs/plugin-react
 ```
 
-Peer dependency:
-- `express` `^4.18.0 || ^5.0.0`
+### Vue 3 + Express + Vite Setup
 
----
+For building Express Inertia applications with Vue 3 and Vite:
 
-## Table of contents
+```bash
+npm i arpon-express-inertia-bridge express ejs @inertiajs/vue3 vue
+npm i -D vite @vitejs/plugin-vue
+```
 
-1. [How it works](#how-it-works)
-2. [Quick start](#quick-start)
-3. [Client setup](#client-setup)
-4. [Production Vite setup](#production-vite-setup)
-5. [Shared props](#shared-props)
-6. [Head and title strategies](#head-and-title-strategies)
-7. [SSR support](#ssr-support)
-8. [Template support](#template-support)
-9. [API reference](#api-reference)
-10. [Behavior details](#behavior-details)
-11. [Limitations](#limitations)
-12. [Troubleshooting](#troubleshooting)
+## Quick Start
 
----
+### Step 1: Set up Express
 
-## How it works
-
-When you call `res.inertia("PageName", props)`:
-
-1. Shared props are resolved (`res.SharedProps` + `sharedProps` option).
-2. A standard Inertia page payload is built:
-   - `component`
-   - `props`
-   - `url`
-   - `version` (if provided)
-3. If request has `X-Inertia: true`, middleware returns JSON + `X-Inertia: true`.
-4. Otherwise, middleware returns HTML:
-   - injects Vite tags (dev server or manifest assets)
-   - optionally asks SSR server for `head` + `body`
-   - resolves head/title from configured strategy
-   - renders default template or your custom template
-
----
-
-## Quick start
-
-### Server (Express)
+Create your server file (e.g., `server.js`):
 
 ```js
 import express from "express";
-import inertiaExpress from "arpon-inertia-bridge";
+import path from "node:path";
+import inertiaExpress from "arpon-express-inertia-bridge";
 
 const app = express();
+const isDev = process.env.NODE_ENV !== "production";
+
+app.set("view engine", "ejs");
+app.set("views", path.join(process.cwd(), "views"));
 
 app.use(
   inertiaExpress({
-    version: "1",
-    sharedProps: ({ req }) => ({
-      appName: "My App",
-      currentPath: req.path
-    }),
     vite: {
-      isDev: true,
-      devServerUrl: "http://127.0.0.1:5173",
-      entry: "resources/js/app.jsx"
+      isDev,
+      entry: "resources/js/app.jsx" // use app.js for Vue
     }
   })
 );
 
+// Example: render a page with data
 app.get("/", async (_req, res) => {
-  await res.inertia("Home", {
-    title: "Home",
-    description: "Welcome"
-  });
+  await res.inertia("Home", { message: "Hello from Inertia + Express" });
 });
 
-app.listen(3000);
+app.listen(3000, () => console.log("Server running on http://localhost:3000"));
 ```
 
-### TypeScript server usage
+### Step 2: Create root template
 
-```ts
-import express from "express";
-import inertiaExpress from "arpon-inertia-bridge";
+Create `views/base.ejs` - this is the HTML wrapper for your app:
 
-const app = express();
-
-app.use(
-  inertiaExpress({
-    version: () => process.env.APP_VERSION ?? "dev",
-    sharedProps: () => ({ appName: "My App" }),
-    vite: {
-      entry: "resources/js/app.tsx",
-      manifestPath: "public/.vite/manifest.json",
-      assetsBase: "/"
-    }
-  })
-);
+```ejs
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <%- viteReactRefresh %>
+  <x-inertia::head>
+    <title>My App</title>
+    <meta name="description" content="My App Description" />
+  </x-inertia::head>
+  <%- viteTags %>
+</head>
+<body>
+  <x-inertia::app />
+</body>
+</html>
 ```
 
----
+### Step 3: Create frontend app
 
-## Client setup
-
-### React client entry
+**For React** (`resources/js/app.jsx`):
 
 ```jsx
 import { createInertiaApp } from "@inertiajs/react";
 import { createRoot } from "react-dom/client";
 
-const APP_NAME = "My App";
-
 createInertiaApp({
-  title: (title) => (title ? `${title} | ${APP_NAME}` : APP_NAME),
   resolve: (name) => {
     const pages = import.meta.glob("./Pages/**/*.jsx", { eager: true });
     return pages[`./Pages/${name}.jsx`];
@@ -140,11 +119,11 @@ createInertiaApp({
 });
 ```
 
-### Vue client entry
+**For Vue** (`resources/js/app.js`):
 
-```ts
-import { createInertiaApp } from "@inertiajs/vue3";
+```js
 import { createApp, h } from "vue";
+import { createInertiaApp } from "@inertiajs/vue3";
 
 createInertiaApp({
   resolve: (name) => {
@@ -157,313 +136,173 @@ createInertiaApp({
 });
 ```
 
-Use Vue adapter mode on the server in dev:
+### Step 4: Configure Vite
 
-```ts
-inertiaExpress({
-  vite: {
-    adapter: "vue",
-    isDev: true,
-    devServerUrl: "http://127.0.0.1:5173",
-    entry: "resources/js/app.ts"
-  }
-});
-```
-
----
-
-## Production Vite setup
-
-When `vite.isDev` is `false` (or when `vite.isDev` is omitted and `vite.devServerUrl` is not set), middleware reads Vite manifest and injects:
-- modulepreload links for imported chunks
-- stylesheet links
-- entry module script
-
-```ts
-inertiaExpress({
-  vite: {
-    isDev: false,
-    entry: "resources/js/app.tsx",
-    manifestPath: "public/.vite/manifest.json",
-    assetsBase: "/"
-  }
-});
-```
-
-Defaults:
-- `isDev`: `Boolean(vite.devServerUrl)` (automatic fallback for backward compatibility)
-- `entry`: `"resources/js/app.tsx"`
-- `manifestPath`: `path.resolve(process.cwd(), "public", ".vite", "manifest.json")`
-- `assetsBase`: `"/"`
-
----
-
-## Shared props
-
-You can set shared props in two places.
-
-### 1. `sharedProps` option
-
-```ts
-inertiaExpress({
-  sharedProps: ({ req }) => ({ currentPath: req.path })
-});
-```
-
-### 2. Express middleware via `res.SharedProps`
+**For React** (`vite.config.js`):
 
 ```js
-app.use((req, res, next) => {
-  res.SharedProps = {
-    appName: "My App",
-    currentPath: req.path
-  };
-  next();
-});
-```
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
-Merge order:
-1. `res.SharedProps`
-2. `sharedProps` option output
-3. page props from `res.inertia(...)`
-
-Later entries override earlier ones on key conflicts.
-
----
-
-## Head and title strategies
-
-You have 3 ways to produce first-load `<head>` output.
-
-### A) `head` option (manual resolver)
-
-```ts
-inertiaExpress({
-  head: ({ page }) => {
-    const title = typeof page.props.title === "string" ? page.props.title : "My App";
-    const description =
-      typeof page.props.description === "string" ? page.props.description : "";
-
-    return [
-      `<title>${title}</title>`,
-      `<meta name="description" content="${description}" />`
-    ];
+export default defineConfig({
+  plugins: [react()],
+  server: { cors: true },
+  build: {
+    manifest: true,
+    rollupOptions: {
+      input: "resources/js/app.jsx"
+    }
   }
 });
 ```
 
-### B) `headFromPage` option (read page file)
+**For Vue** (`vite.config.js`):
 
-```ts
-import path from "node:path";
+```js
+import { defineConfig } from "vite";
+import vue from "@vitejs/plugin-vue";
 
-inertiaExpress({
-  headFromPage: {
-    pagesPath: path.join(process.cwd(), "resources", "js", "Pages")
+export default defineConfig({
+  plugins: [vue()],
+  server: { cors: true },
+  build: {
+    manifest: true,
+    rollupOptions: {
+      input: "resources/js/app.js"
+    }
   }
 });
 ```
 
-This parses `<Head />` from page files using an AST parser for JSX/TSX and a fallback parser for template-style files.
+## Core API
 
-### C) SSR-provided head
+### `inertiaExpress(options)` - Express + Inertia Middleware Configuration
 
-If SSR is enabled and returns `head[]`, SSR head wins.
+Complete configuration options for the Express Inertia bridge middleware:
 
-### Precedence
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `rootId` | `string` | `"app"` | Inertia root element id in HTML |
+| `version` | `string \| () => Promise<string>` | `undefined` | Asset versioning for cache busting with `X-Inertia-Version` |
+| `sharedProps` | `object \| (ctx) => object` | `undefined` | Data shared with every page from Express backend |
+| `head` | `string \| string[] \| (ctx) => ...` | `undefined` | Manual head tags resolver |
+| `headStrategy` | `"auto" \| "head" \| "headFromPage" \| (ctx) => ...` | `"auto"` | How to handle head tags (SEO meta tags, title, etc.) |
+| `title` | `string \| (ctx) => string` | `undefined` | Final title override/formatter for pages |
+| `headFromPage` | `boolean \| { pagesPath?: string }` | `true` | Read head data from React/Vue page components |
+| `vite.adapter` | `"react" \| "vue"` | `"react"` | Inertia adapter (React or Vue 3) |
+| `vite.isDev` | `boolean` | auto-detected | Force dev or production mode |
+| `vite.devServerUrl` | `string` | `http://localhost:5173` | Vite dev server URL for development |
+| `vite.entry` | `string` | `resources/js/app.jsx` (react) / `resources/js/app.js` (vue) | Client entry file path |
+| `vite.devStyleEntry` | `string` | `undefined` | Extra stylesheet for development |
+| `vite.manifestPath` | `string` | auto-detected | Path to Vite manifest.json for production |
+| `vite.assetsBase` | `string` | `"/"` | Prefix for asset paths |
+| `ssr.url` | `string` | `http://127.0.0.1:13714` | URL for server-side rendering service |
+| `rootView` | `string` | `"base"` | Express view name (EJS template) for initial page load |
+| `viewData` | `object \| (ctx) => object` | `undefined` | Extra data for Express templates |
+| `templatePath` | `string` | `undefined` | Custom HTML or EJS template file path |
+| `template` | `(ctx) => string` | `undefined` | Custom template renderer function |
+| `diagnostics` | `boolean` | `false` | Log warnings for common Inertia + Express setup mistakes |
 
-Head precedence is:
-1. SSR head (if available)
-2. `head` result
-3. `headFromPage` result
+### Response methods - Express Inertia helpers
 
-If both `head` and `headFromPage` are set, `head` takes priority over `headFromPage`.
+Methods added to Express `response` object for Inertia rendering:
 
-### Per-route / per-component head strategy
+- `res.inertia(component, props?)` - Render an Inertia page component with React or Vue
+- `res.share(props)` - Share data with all pages across your Express app
+- `res.inertiaShare(props)` - Alias of `res.share()`
+- `res.inertiaLocation(url)` - Send Inertia redirect response (409 + `X-Inertia-Location` header)
 
-Use `headStrategy` to choose source dynamically:
+### `validateInertiaExpressOptions(options)`
 
-```ts
+Utility function that validates your Express Inertia configuration and returns a list of diagnostics for common mistakes:
+- Missing root view templates
+- Invalid Vite configuration
+- Missing entry files
+- SSR URL issues
+- Mismatched head settings
+
+---
+
+## Template and head behavior
+
+### Express EJS template tags
+
+- `<x-inertia::app />` - Renders the Inertia SPA root element
+- `<x-inertia::head>...</x-inertia::head>` - Merges default and page-specific head tags (Laravel-style)
+- `<title inertia>` - Automatically normalized for Inertia compatibility
+
+### EJS locals provided by Express Inertia middleware
+
+- `inertia`, `page`, `rootId` - Core Inertia page data
+- `inertiaHead`, `head`, `ssrHead` - Head tag data
+- `ssrBody`, `inertiaBody` - HTML body content
+- `viteReactRefresh`, `viteTags`, `viteCombinedTags`, `inertiaViteTags` - Vite script tags
+- Plus any custom data from `viewData` option
+
+---
+
+## Comparison: Express Inertia vs alternatives
+
+| Feature | Express + Inertia | Next.js | Nuxt | Traditional REST API |
+| --- | --- | --- | --- | --- |
+| **Server routing** | ✅ Express routes | ✅ File-based | ✅ File-based | ❌ Requires API |
+| **Full-stack** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ Separate frontend |
+| **React support** | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
+| **Vue support** | ✅ Yes | ❌ No | ✅ Yes | ✅ Yes |
+| **Vite support** | ✅ Yes | ❌ Webpack/Turbopack | ✅ Yes | ✅ Yes |
+| **SSR** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **Flexibility** | ✅ Use any Express stack | Limited | Limited | ✅ High |
+
+---
+
+## Common use cases
+
+### Building a React Inertia app with Express
+Use this package to connect your Express backend to React frontend without building a separate REST API.
+
+### Building a Vue 3 Inertia app with Express
+Server-rendered Vue 3 applications with Express routing and Vite bundling.
+
+### Full-stack TypeScript applications
+Write type-safe backend and frontend code that works together seamlessly.
+
+### Server-side rendered (SSR) SPAs
+Pre-render pages on the server for better performance and SEO in Express Inertia apps.
+
+---
+
+## How it works
+
+1. **Express receives a request** - Your server handles the HTTP request
+2. **You call `res.inertia()`** - Render a React or Vue component with server-side data
+3. **Middleware injects data into template** - Component name and props are embedded in HTML
+4. **Browser renders the page** - React or Vue renders the component client-side
+5. **Inertia handles navigation** - Further page transitions are client-side (no full page reloads)
+
+This is a **server-driven SPA** approach - unlike traditional React/Vue apps where the client bootstraps from scratch, Inertia provides the initial page instantly with server-rendered HTML.
+
+## Benefits of Express + Inertia
+
+✅ **Full-stack development** - Write backend and frontend in one codebase  
+✅ **Server-side routing** - No need for a separate API layer  
+✅ **Modern frontend** - Use React or Vue with all modern tooling  
+✅ **Type-safe** - Full TypeScript support  
+✅ **SSR support** - Server-side rendering for better performance and SEO  
+✅ **Shared data** - Send data from server to all pages automatically  
+✅ **Fast dev experience** - Vite for instant HMR (hot module replacement)
+
+## Optional: Server-Side Rendering (SSR)
+
+For even better performance and SEO, enable server-side rendering:
+
+```js
 inertiaExpress({
-  head,
-  headFromPage: { pagesPath: path.join(process.cwd(), "resources", "js", "Pages") },
-  headStrategy: ({ req, page }) => {
-    if (req.path.startsWith("/admin")) return "head"; // manual tags
-    if (page.component.startsWith("Marketing/")) return "headFromPage"; // page-driven tags
-    return "auto"; // default: head first, then headFromPage
-  }
-});
+  ssr: { url: "http://127.0.0.1:13714" }
+})
 ```
 
-Allowed values:
-- `"auto"` (default)
-- `"head"`
-- `"headFromPage"`
+When configured, the middleware will pre-render HTML on the server before sending to the browser. If SSR fails, it automatically falls back to client-side rendering.
 
-### Title resolver
+## License
 
-Use `title` to normalize final page title:
-
-```ts
-inertiaExpress({
-  title: ({ page, title }) => {
-    const appName = typeof page.props.appName === "string" ? page.props.appName : "My App";
-    return title ? `${title} | ${appName}` : appName;
-  }
-});
-```
-
-If `title` is not provided, middleware tries to infer title formatting from your Vite entry `createInertiaApp({ title: ... })` pattern.
-
----
-
-## SSR support
-
-```ts
-inertiaExpress({
-  ssr: {
-    url: "http://127.0.0.1:13714"
-  }
-});
-```
-
-Behavior:
-- Middleware POSTs page payload to `${url}/render`.
-- If `url` does not end with `/render`, it is appended automatically.
-- Expects JSON with:
-  - `head: string[]`
-  - `body: string`
-
-Errors:
-- non-2xx SSR responses throw an error
-- malformed payload falls back to empty `head`/`body` fields (when possible)
-
-Default SSR URL base:
-- `http://127.0.0.1:13714`
-
----
-
-## Template support
-
-You can render using:
-1. built-in default template
-2. `templatePath` HTML file
-3. `template(context)` callback
-
-### `templatePath` example
-
-```ts
-import path from "node:path";
-
-inertiaExpress({
-  templatePath: path.join(process.cwd(), "index.html"),
-  vite: {
-    isDev: true,
-    devServerUrl: "http://127.0.0.1:5173",
-    entry: "resources/js/app.jsx"
-  }
-});
-```
-
-Supported placeholders in your HTML:
-- `<!-- INERTIA_VITE_TAGS -->`
-- `<!-- INERTIA_HEAD -->`
-- `__INERTIA_APP__`
-- `__INERTIA_ROOT_ID__`
-- `__INERTIA_PAGE__`
-- `__INERTIA_SSR_BODY__`
-
-If SSR head includes a `<title>`, middleware replaces existing template title with SSR title.
-
----
-
-## API reference
-
-### `inertiaExpress(options?)`
-
-| Option | Type | Default | Notes |
-|---|---|---|---|
-| `rootId` | `string` | `"app"` | Root element id for non-SSR app mount |
-| `version` | `string \| () => string \| Promise<string>` | `undefined` | Used for Inertia version checks |
-| `sharedProps` | `object \| ({ req, res }) => object \| Promise<object>` | `undefined` | Merged into all page props |
-| `head` | `string \| string[] \| ({ page, req, res }) => ...` | `undefined` | Manual head resolver |
-| `headStrategy` | `"auto" \| "head" \| "headFromPage" \| ({ page, req, res }) => ...` | `"auto"` | Select head source globally or per request |
-| `title` | `string \| ({ title, page, req, res }) => ...` | `undefined` | Final title override/formatter |
-| `headFromPage` | `boolean \| { pagesPath?: string }` | `undefined` | Parse `<Head />` from page file |
-| `vite.adapter` | `"react" \| "vue"` | `"react"` | Dev adapter behavior (`react` injects refresh preamble, `vue` does not) |
-| `vite.isDev` | `boolean` | `Boolean(vite.devServerUrl)` | Explicitly selects dev/manifest mode |
-| `vite.devServerUrl` | `string` | `undefined` | Required when `vite.isDev` is `true`; used for dev tags |
-| `vite.entry` | `string` | `"resources/js/app.tsx"` | Entry used for dev script / manifest lookup |
-| `vite.manifestPath` | `string` | `public/.vite/manifest.json` | Used in production mode |
-| `vite.assetsBase` | `string` | `"/"` | Prefix for manifest-generated asset URLs |
-| `ssr.url` | `string` | `"http://127.0.0.1:13714"` | SSR base URL (`/render` auto-appended) |
-| `templatePath` | `string` | `undefined` | File-based HTML template |
-| `template` | `(context) => string \| Promise<string>` | `undefined` | Full custom HTML renderer |
-
-### Response helpers added by middleware
-
-- `await res.inertia(component, props?)`
-- `res.inertiaLocation(location)`
-- optional `res.SharedProps` object (for upstream middleware)
-
----
-
-## Behavior details
-
-### Inertia request detection
-
-A request is treated as an Inertia navigation when:
-- `X-Inertia: true`
-
-### Version mismatch behavior
-
-On Inertia requests, if both are present and mismatched:
-- current `version`
-- request `X-Inertia-Version`
-
-Response:
-- `409`
-- header `X-Inertia-Location: <current_url>`
-
-### Headers
-
-Middleware always sets:
-- `Vary: X-Inertia`
-
-### Security note
-
-Page JSON embedded into HTML is escaped to prevent unsafe HTML/script injection from raw JSON delimiters.
-
----
-
-## Limitations
-
-1. `headFromPage` supports AST extraction for JSX/TSX and fallback parsing for non-JSX templates (`.vue` included), but very complex runtime-only expressions can still require explicit `head` or `title` resolvers.
-2. Client entry title inference evaluates `createInertiaApp({ title })` with local declarations plus constants imported from local relative modules; callbacks that depend on dynamic runtime values (network, browser globals, complex external modules) may still require an explicit `title` resolver.
-
----
-
-## Troubleshooting
-
-### `Unable to find Vite entry ... in manifest ...`
-
-Check:
-1. `vite.entry` matches manifest key.
-2. `manifestPath` points to the correct file.
-3. frontend build actually generated the manifest.
-
-### Head tags not appearing in first HTML
-
-Check:
-1. you are testing first page load (not client-side navigation only)
-2. `head` resolver returns strings
-3. `headFromPage.pagesPath` points to real page files
-
-### SSR errors
-
-Check:
-1. SSR server is running
-2. SSR URL is reachable from app server
-3. SSR endpoint returns `{ head: string[], body: string }`
-
-# arpon-inertia-bridge
+MIT
