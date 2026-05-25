@@ -1,6 +1,6 @@
 {
   "name": "arpon-express-inertia-bridge",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Express middleware bridge for Inertia.js with Vite (React + Vue adapter mode)",
   "author": "Arpon",
   "keywords": [
